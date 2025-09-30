@@ -78,6 +78,9 @@ Meshcore uses Nightcracker's portable implementation of ed25519 to calculate sig
 
 ## Security
 
+> [!CAUTION]
+> **Never** use identity keys from third parties! If you didn't calculate the private key yourself, then it doesn't belong to you!
+
 I haven't really dug too deep in the weeds, but the keys generated from this script *should be* cryptographically secure, given that entropy is sourced from /dev/urandom and the utilized ed25519 library should be safe to use (it's the same one used in the official meshcore firmware). 
 
 That being said, if you want maximum security then you really shouldn't take the risk with my script, and I recommend sticking to the default usage of meshcore.
