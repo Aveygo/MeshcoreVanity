@@ -179,7 +179,8 @@ int main(int argc, char *argv[]) {
     }
 
     if (is_prefix_mode == 1) {
-        printf("Warning! You are calculating a prefix");
+        printf("\nWarning! You are calculating a vanity **prefix**. You are responsible for ensuring that your public address doesn't collide with any neighbors. See the README for more details.\nPress ENTER to continue.");
+        getchar();
     }
 
     printf("Started looking for %s '%s' using %d threads...\n", 
