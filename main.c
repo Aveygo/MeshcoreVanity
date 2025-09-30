@@ -13,11 +13,12 @@
 _Atomic int found = 0;
 _Atomic unsigned long attempts = 0;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-unsigned char prefix_bytes[32];
-size_t prefix_byte_len;
-unsigned char last_mask = 0; // 0 if full bytes, 0xF0 if partial (last 4 bits)
+unsigned char target_bytes[32];
+size_t target_byte_len;
+unsigned char last_mask = 0; // 0 if full bytes, 0x0F for suffix partial, 0xF0 for prefix partial
 unsigned char found_pub[32];
 unsigned char found_priv[32];
+int is_prefix_mode = 0; // 0 for suffix (default), 1 for prefix
 
 int hex_to_bytes(const char *hex, unsigned char *bytes) {
     size_t hex_len = strlen(hex);
@@ -56,11 +57,23 @@ int is_valid_hex(const char *hex) {
     return 1;
 }
 
-int check_vanity_prefix(const unsigned char *public_key, const unsigned char *prefix_bytes, size_t prefix_byte_len, unsigned char last_mask) {
-    for (size_t i = 0; i < prefix_byte_len; i++) {
-        unsigned char mask = (i == prefix_byte_len - 1 && last_mask != 0) ? last_mask : 0xFF;
-        if ((public_key[i] & mask) != (prefix_bytes[i] & mask)) {
-            return 0;
+int check_vanity(const unsigned char *public_key, const unsigned char *target_bytes, size_t target_byte_len, unsigned char last_mask, int is_prefix) {
+    if (is_prefix) {
+        // Prefix mode: compare start of public_key
+        for (size_t i = 0; i < target_byte_len; i++) {
+            unsigned char mask = (i == target_byte_len - 1 && last_mask != 0) ? last_mask : 0xFF;
+            if ((public_key[i] & mask) != (target_bytes[i] & mask)) {
+                return 0;
+            }
+        }
+    } else {
+        // Suffix mode: compare end of public_key
+        for (size_t i = 0; i < target_byte_len; i++) {
+            size_t pub_idx = 32 - target_byte_len + i;
+            unsigned char mask = (i == target_byte_len - 1 && last_mask != 0) ? last_mask : 0xFF;
+            if ((public_key[pub_idx] & mask) != (target_bytes[i] & mask)) {
+                return 0;
+            }
         }
     }
     return 1;
@@ -85,7 +98,7 @@ void *worker(void *arg) {
         ed25519_derive_pub(public_key, private_key);
         atomic_fetch_add_explicit(&attempts, 1, memory_order_relaxed);
 
-        if (check_vanity_prefix(public_key, prefix_bytes, prefix_byte_len, last_mask)) {
+        if (check_vanity(public_key, target_bytes, target_byte_len, last_mask, is_prefix_mode)) {
             pthread_mutex_lock(&mutex);
             if (atomic_load_explicit(&found, memory_order_relaxed) == 0) {
                 memcpy(found_pub, public_key, 32);
@@ -111,30 +124,51 @@ void *reporter(void *arg) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "Usage: %s <hex_prefix> <num_threads>\n", argv[0]);
+    const char *target = NULL;
+    int num_threads = 0;
+    int arg_index = 1;
+
+    // Parse command-line arguments
+    if (argc < 3 || argc > 4) {
+        fprintf(stderr, "Usage: %s [--i-know-what-im-doing] <hex_target> <num_threads>\n", argv[0]);
         return 1;
     }
 
-    const char *target_prefix = argv[1];
-    if (!is_valid_hex(target_prefix)) {
-        fprintf(stderr, "Error: Invalid hex prefix '%s'\n", target_prefix);
+    if (strcmp(argv[1], "--i-know-what-im-doing") == 0) {
+        is_prefix_mode = 1;
+        if (argc != 4) {
+            fprintf(stderr, "Usage: %s --i-know-what-im-doing <hex_prefix> <num_threads>\n", argv[0]);
+            return 1;
+        }
+        target = argv[2];
+        num_threads = atoi(argv[3]);
+    } else {
+        is_prefix_mode = 0;
+        if (argc != 3) {
+            fprintf(stderr, "Usage: %s <hex_suffix> <num_threads>\n", argv[0]);
+            return 1;
+        }
+        target = argv[1];
+        num_threads = atoi(argv[2]);
+    }
+
+    if (!is_valid_hex(target)) {
+        fprintf(stderr, "Error: Invalid hex %s '%s'\n", is_prefix_mode ? "prefix" : "suffix", target);
         return 1;
     }
 
-    int converted_len = hex_to_bytes(target_prefix, prefix_bytes);
+    int converted_len = hex_to_bytes(target, target_bytes);
     if (converted_len < 0) {
-        fprintf(stderr, "Error: Invalid hex prefix '%s'\n", target_prefix);
+        fprintf(stderr, "Error: Invalid hex %s '%s'\n", is_prefix_mode ? "prefix" : "suffix", target);
         return 1;
     }
-    prefix_byte_len = (size_t)converted_len;
+    target_byte_len = (size_t)converted_len;
 
-    size_t hex_len = strlen(target_prefix);
-    last_mask = (hex_len % 2 == 1) ? 0xF0 : 0;
+    size_t hex_len = strlen(target);
+    last_mask = (hex_len % 2 == 1) ? (is_prefix_mode ? 0xF0 : 0x0F) : 0;
 
-    int num_threads = atoi(argv[2]);
     if (num_threads <= 0) {
-        fprintf(stderr, "Error: Invalid number of threads '%s'\n", argv[2]);
+        fprintf(stderr, "Error: Invalid number of threads '%s'\n", argv[argc - 1]);
         return 1;
     }
 
@@ -144,7 +178,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Started looking for '%s' using %d threads...\n", target_prefix, num_threads);
+    if (is_prefix_mode == 1) {
+        printf("Warning! You are calculating a prefix");
+    }
+
+    printf("Started looking for %s '%s' using %d threads...\n", 
+           is_prefix_mode ? "prefix" : "suffix", target, num_threads);
 
     pthread_t report_thread;
     if (pthread_create(&report_thread, NULL, reporter, NULL) != 0) {

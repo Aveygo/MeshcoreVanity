@@ -25,12 +25,15 @@ See releases to download the binary (linux only!):
 $ ./meshcore_vanity B00B1E5 16
 Started looking for 'B00B1E5' using 16 threads...
 Found vanity public key after 16566534 attempts!
-Identity: fbe10d...b00b1e5...68fc4b
+Identity: fbe10d...b00b1e5
 ```
 
-In my case, I sent the identity key to my phone via email (i'm lazy don't judge), then loaded it via the meshcore companion app.
+> [!IMPORTANT]
+> This program will by default calculate vanity **suffixes**. This is because Meshcore uses the first byte of each public key (two hexadecimals) for calculating paths between nodes, which should ideally be unique. 
+> If you want a custom vanity **prefix**, please make sure that your vanity address does not use the first two hex characters of any neighboring nodes! Once you have confirmed this, you can use the "--i-know-what-im-doing" flag to calculate your vanity **prefix** address. 
+> *Please keep the mesh functional and be a good neighbor!*
 
-Note that the identity contains the private key & public key concatenated together; once it's loaded in meshcore the vanity text will appear at the beginning of the public key (see image above).
+Once you calculate your identity key, you'll need to send it to your companion app in a secure manner (or you can use email if you're lazy like me).
 
 ## Building
 
