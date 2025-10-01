@@ -89,13 +89,15 @@ void *worker(void *arg) {
 
     unsigned char private_key[32];
     unsigned char public_key[32];
+    unsigned char seed[32];
 
     while (atomic_load_explicit(&found, memory_order_relaxed) == 0) {
-        if (read(fd, private_key, 32) != 32) {
+        if (read(fd, seed, 32) != 32) {
             perror("Failed to read from /dev/urandom");
             exit(1);
         }
-        ed25519_derive_pub(public_key, private_key);
+        ed25519_create_keypair(public_key, private_key, seed);
+
         atomic_fetch_add_explicit(&attempts, 1, memory_order_relaxed);
 
         if (check_vanity(public_key, target_bytes, target_byte_len, last_mask, is_prefix_mode)) {
